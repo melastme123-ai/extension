@@ -13,7 +13,7 @@
     ],
     "icon": "https://animetosho.org/inc/favicon.ico",
     "update": "https://exten.pages.dev/dub/index.json",
-    "code": "https://exten.pages.dev/dub/animetosho.js",
+    "code": "https://raw.githubusercontent.com/melastme123-ai/extension/refs/heads/main/animetosho.js",
     "options": {
       "useTorrent": {
         "type": "boolean",
