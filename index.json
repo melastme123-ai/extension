@@ -12,7 +12,7 @@
       "US"
     ],
     "icon": "https://animetosho.org/inc/favicon.ico",
-    "update": "https://exten.pages.dev/dub/index.json",
+    "update": "https://raw.githubusercontent.com/melastme123-ai/extension/refs/heads/main/index.json",
     "code": "https://raw.githubusercontent.com/melastme123-ai/extension/refs/heads/main/animetosho.js",
     "options": {
       "useTorrent": {
