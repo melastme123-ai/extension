@@ -1,6 +1,8 @@
 const QUALITIES = [ "1080", "720", "540", "480" ];
 
-const DUBBED_REGEX = /\b(?:dub|dubs|dubbed|dual|dual[\s._-]*audio|eng[\s._-]*dub|english[\s._-]*dub)\b/i;
+const DUBBED_REGEX = /\b(?:dubs?|dubbed|dual(?:[\s._-]*audio)?)\b/i;
+
+const BATCH_REGEX = /\b(?:batch|complete|season|s\d{1,2}|ep(?:isodes?)?\s*\d+\s*[-~]\s*\d+|\d+\s*[-~]\s*\d+)\b/i;
 
 export default new class Tosho {
   url = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEv");
@@ -17,15 +19,21 @@ export default new class Tosho {
     );
   }
 
-  getReleases(data) {
-    return data?.data?.releases || [];
-  }
-
   isDubbed(entry) {
     return DUBBED_REGEX.test(entry.title || "");
   }
 
-  map(entries, batch = false, useTorrent = false, excl = []) {
+  isBatch(entry, episode) {
+    const title = entry.title || "";
+
+    if (entry.num_files >= Math.min(24, Math.max(2, episode ?? 1))) {
+      return true;
+    }
+
+    return BATCH_REGEX.test(title);
+  }
+
+  map(entries, useTorrent = false, excl = [], batch = false) {
     const exclusions = excl.map(e => String(e).toLowerCase());
 
     return entries
@@ -60,13 +68,12 @@ export default new class Tosho {
     if (!anidbEid) throw new Error("No anidbEid provided");
 
     const res = await fetch(this.url + "episodes/" + anidbEid + "?limit=100");
-    const json = await res.json();
+    const data = await res.json();
 
-    const releases = this.getReleases(json);
     const excl = this.buildExclusions(resolution, exclusions);
 
-    return releases.length
-      ? this.map(releases, false, options?.useTorrent, excl)
+    return data?.data?.releases?.length
+      ? this.map(data.data.releases, options?.useTorrent, excl)
       : [];
   }
 
@@ -75,19 +82,18 @@ export default new class Tosho {
     if (!anidbAid) throw new Error("No anidbAid provided");
 
     const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
-    const json = await res.json();
+    const data = await res.json();
 
-    const releases = this.getReleases(json);
     const excl = this.buildExclusions(resolution, exclusions);
 
-    const minFiles = Math.min(24, Math.max(2, episode ?? 1));
+    if (!data?.data?.releases?.length) return [];
 
-    const batchReleases = releases.filter(entry =>
-      entry.num_files >= minFiles
+    const batchReleases = data.data.releases.filter(entry =>
+      this.isBatch(entry, episode)
     );
 
     return batchReleases.length
-      ? this.map(batchReleases, true, options?.useTorrent, excl)
+      ? this.map(batchReleases, options?.useTorrent, excl, true)
       : [];
   }
 
@@ -96,13 +102,12 @@ export default new class Tosho {
     if (!anidbAid) throw new Error("No anidbAid provided");
 
     const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
-    const json = await res.json();
+    const data = await res.json();
 
-    const releases = this.getReleases(json);
     const excl = this.buildExclusions(resolution, exclusions);
 
-    return releases.length
-      ? this.map(releases, false, options?.useTorrent, excl)
+    return data?.data?.releases?.length
+      ? this.map(data.data.releases, options?.useTorrent, excl)
       : [];
   }
 
