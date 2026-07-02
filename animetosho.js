@@ -2,9 +2,14 @@ const QUALITIES = [ "1080", "720", "540", "480" ];
 
 const DUBBED_REGEX = /\b(?:dub|dubs|dubbed|dual|dual[\s._-]*audio|eng[\s._-]*dub|english[\s._-]*dub)\b/i;
 
-const BATCH_REGEX = /\b(?:batch|complete|complete[\s._-]*series|complete[\s._-]*season|season[\s._-]*\d{1,2}|s\d{1,2}|episodes?[\s._-]*\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3}|eps?[\s._-]*\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3}|\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3})\b/i;
+// Strong signs that something is a real batch.
+const STRONG_BATCH_REGEX = /\b(?:batch|complete|complete[\s._-]*series|complete[\s._-]*season|all[\s._-]*episodes|episodes?[\s._-]*\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3}|eps?[\s._-]*\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3}|s\d{1,2}e\d{1,3}[\s._-]*[-~][\s._-]*(?:s\d{1,2}e)?\d{1,3}|\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3})\b/i;
 
-const SINGLE_EPISODE_REGEX = /\b(?:s\d{1,2}e\d{1,3}|e\d{1,3}|ep\d{1,3}|episode[\s._-]*\d{1,3})\b/i;
+// Strong signs that something is only one episode.
+const SINGLE_EPISODE_REGEX = /\b(?:s\d{1,2}e\d{1,3}|episode[\s._-]*\d{1,3}|ep[\s._-]*\d{1,3}|e\d{1,3})\b/i;
+
+// Weak signs of a batch. These only count if it does not look like a single episode.
+const WEAK_BATCH_REGEX = /\b(?:season[\s._-]*\d{1,2}|s\d{1,2})\b/i;
 
 export default new class Tosho {
   url = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEv");
@@ -45,19 +50,25 @@ export default new class Tosho {
     const fileCount = this.getFileCount(entry);
     const minFiles = Math.min(24, Math.max(2, episode ?? 1));
 
-    // If the API gives a useful file count, use it to confirm a batch.
+    // Example: "(Batch)", "Complete", "01-12", "Episodes 01-12"
+    if (STRONG_BATCH_REGEX.test(title)) {
+      return true;
+    }
+
+    // Example: "S02E11", "Episode 11", "EP 11"
+    if (SINGLE_EPISODE_REGEX.test(title)) {
+      return false;
+    }
+
+    // If the API gives a useful file count, use it.
     if (typeof fileCount === "number" && fileCount >= minFiles) {
       return true;
     }
 
-    // If the title clearly says it is a batch, trust the title.
-    if (BATCH_REGEX.test(title)) {
+    // Weak fallback.
+    // Example: "Season 01" or "S01", but only if it did not look like one episode.
+    if (WEAK_BATCH_REGEX.test(title)) {
       return true;
-    }
-
-    // If it clearly looks like one episode, reject it.
-    if (SINGLE_EPISODE_REGEX.test(title)) {
-      return false;
     }
 
     return false;
