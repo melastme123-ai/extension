@@ -1,0 +1,25 @@
+[
+  {
+    "manifestVersion": 2,
+    "name": "AnimeTosho Dubs (Old)",
+    "id": "animetosho-dub",
+    "version": "0.0.9",
+    "type": "torrent",
+    "accuracy": "high",
+    "ratio": 0,
+    "media": "dub",
+    "languages": [
+      "US"
+    ],
+    "icon": "https://animetosho.org/inc/favicon.ico",
+    "update": "https://exten.pages.dev/dub/index.json",
+    "code": "https://exten.pages.dev/dub/animetosho.js",
+    "options": {
+      "useTorrent": {
+        "type": "boolean",
+        "description": "Use .torrent files instead of magnet links, this can cause issues with some internet providers if they block some domains",
+        "default": false
+      }
+    }
+  }
+]
