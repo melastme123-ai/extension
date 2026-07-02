@@ -1,8 +1,6 @@
 const QUALITIES = [ "1080", "720", "540", "480" ];
 
-const DUBBED_REGEX = /\b(?:dubs?|dubbed|dual(?:[\s._-]*audio)?)\b/i;
-
-const BATCH_REGEX = /\b(?:batch|complete|season|s\d{1,2}|ep(?:isodes?)?\s*\d+\s*[-~]\s*\d+|\d+\s*[-~]\s*\d+)\b/i;
+const DUBBED_REGEX = /\b(?:dub|dubs|dubbed|dual|dual[\s._-]*audio|eng[\s._-]*dub|english[\s._-]*dub)\b/i;
 
 export default new class Tosho {
   url = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEv");
@@ -19,20 +17,6 @@ export default new class Tosho {
     );
   }
 
-  isDubbed(entry) {
-    return DUBBED_REGEX.test(entry.title || "");
-  }
-
-  isBatch(entry, episode) {
-    const title = entry.title || "";
-
-    if (entry.num_files >= Math.min(24, Math.max(2, episode ?? 1))) {
-      return true;
-    }
-
-    return BATCH_REGEX.test(title);
-  }
-
   map(entries, useTorrent = false, excl = [], batch = false) {
     const exclusions = excl.map(e => String(e).toLowerCase());
 
@@ -41,7 +25,7 @@ export default new class Tosho {
         const title = entry.title || "";
         const lowerTitle = title.toLowerCase();
 
-        if (!this.isDubbed(entry)) return false;
+        if (!DUBBED_REGEX.test(title)) return false;
 
         if (exclusions.length && exclusions.some(e => lowerTitle.includes(e))) {
           return false;
@@ -77,7 +61,7 @@ export default new class Tosho {
       : [];
   }
 
-  async batch({ anidbAid, resolution, exclusions = [], episode }, options) {
+  async batch({ anidbAid, resolution, exclusions = [] }, options) {
     if (!navigator.onLine) return [];
     if (!anidbAid) throw new Error("No anidbAid provided");
 
@@ -86,14 +70,8 @@ export default new class Tosho {
 
     const excl = this.buildExclusions(resolution, exclusions);
 
-    if (!data?.data?.releases?.length) return [];
-
-    const batchReleases = data.data.releases.filter(entry =>
-      this.isBatch(entry, episode)
-    );
-
-    return batchReleases.length
-      ? this.map(batchReleases, options?.useTorrent, excl, true)
+    return data?.data?.releases?.length
+      ? this.map(data.data.releases, options?.useTorrent, excl, true)
       : [];
   }
 
