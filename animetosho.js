@@ -2,11 +2,9 @@ const QUALITIES = [ "1080", "720", "540", "480" ];
 
 const DUBBED_REGEX = /\b(?:dub|dubs|dubbed|dual|dual[\s._-]*audio|eng[\s._-]*dub|english[\s._-]*dub)\b/i;
 
-// Things that usually mean a release is a batch.
-const BATCH_REGEX = /\b(?:batch|complete|complete series|complete season|season\s*\d{1,2}|s\d{1,2}|episodes?\s*\d{1,3}\s*[-~]\s*\d{1,3}|eps?\s*\d{1,3}\s*[-~]\s*\d{1,3}|\d{1,3}\s*[-~]\s*\d{1,3})\b/i;
+const BATCH_REGEX = /\b(?:batch|complete|complete[\s._-]*series|complete[\s._-]*season|season[\s._-]*\d{1,2}|s\d{1,2}|episodes?[\s._-]*\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3}|eps?[\s._-]*\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3}|\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3})\b/i;
 
-// Things that usually mean a release is only one episode.
-const SINGLE_EPISODE_REGEX = /(?:^|[\s._\-[\(])(?:e?p?\s*)?\d{1,3}(?:v\d)?(?:[\s._\-\]\)]|$)|s\d{1,2}e\d{1,3}/i;
+const SINGLE_EPISODE_REGEX = /\b(?:s\d{1,2}e\d{1,3}|e\d{1,3}|ep\d{1,3}|episode[\s._-]*\d{1,3})\b/i;
 
 export default new class Tosho {
   url = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEv");
@@ -45,16 +43,19 @@ export default new class Tosho {
   isBatch(entry, episode) {
     const title = entry.title || "";
     const fileCount = this.getFileCount(entry);
+    const minFiles = Math.min(24, Math.max(2, episode ?? 1));
 
-    if (typeof fileCount === "number") {
-      const minFiles = Math.min(24, Math.max(2, episode ?? 1));
-      return fileCount >= minFiles;
+    // If the API gives a useful file count, use it to confirm a batch.
+    if (typeof fileCount === "number" && fileCount >= minFiles) {
+      return true;
     }
 
+    // If the title clearly says it is a batch, trust the title.
     if (BATCH_REGEX.test(title)) {
       return true;
     }
 
+    // If it clearly looks like one episode, reject it.
     if (SINGLE_EPISODE_REGEX.test(title)) {
       return false;
     }
@@ -111,7 +112,7 @@ export default new class Tosho {
     if (!navigator.onLine) return [];
     if (!anidbAid) throw new Error("No anidbAid provided");
 
-    const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
+    const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=300");
     const json = await res.json();
 
     const releases = this.getReleases(json);
@@ -130,7 +131,7 @@ export default new class Tosho {
     if (!navigator.onLine) return [];
     if (!anidbAid) throw new Error("No anidbAid provided");
 
-    const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
+    const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=300");
     const json = await res.json();
 
     const releases = this.getReleases(json);
