@@ -17,15 +17,7 @@ export default new class Tosho {
     );
   }
 
-  getReleases(data) {
-    return data?.data?.releases || [];
-  }
-
-  isDubbed(entry) {
-    return DUBBED_REGEX.test(entry.title || "");
-  }
-
-  map(entries, batch = false, useTorrent = false, excl = []) {
+  map(entries, useTorrent = false, excl = [], batch = false) {
     const exclusions = excl.map(e => String(e).toLowerCase());
 
     return entries
@@ -33,7 +25,7 @@ export default new class Tosho {
         const title = entry.title || "";
         const lowerTitle = title.toLowerCase();
 
-        if (!this.isDubbed(entry)) return false;
+        if (!DUBBED_REGEX.test(title)) return false;
 
         if (exclusions.length && exclusions.some(e => lowerTitle.includes(e))) {
           return false;
@@ -60,34 +52,26 @@ export default new class Tosho {
     if (!anidbEid) throw new Error("No anidbEid provided");
 
     const res = await fetch(this.url + "episodes/" + anidbEid + "?limit=100");
-    const json = await res.json();
+    const data = await res.json();
 
-    const releases = this.getReleases(json);
     const excl = this.buildExclusions(resolution, exclusions);
 
-    return releases.length
-      ? this.map(releases, false, options?.useTorrent, excl)
+    return data?.data?.releases?.length
+      ? this.map(data.data.releases, options?.useTorrent, excl)
       : [];
   }
 
-  async batch({ anidbAid, resolution, exclusions = [], episode }, options) {
+  async batch({ anidbAid, resolution, exclusions = [] }, options) {
     if (!navigator.onLine) return [];
     if (!anidbAid) throw new Error("No anidbAid provided");
 
     const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
-    const json = await res.json();
+    const data = await res.json();
 
-    const releases = this.getReleases(json);
     const excl = this.buildExclusions(resolution, exclusions);
 
-    const minFiles = Math.min(24, Math.max(2, episode ?? 1));
-
-    const batchReleases = releases.filter(entry =>
-      entry.num_files >= minFiles
-    );
-
-    return batchReleases.length
-      ? this.map(batchReleases, true, options?.useTorrent, excl)
+    return data?.data?.releases?.length
+      ? this.map(data.data.releases, options?.useTorrent, excl, true)
       : [];
   }
 
@@ -96,13 +80,12 @@ export default new class Tosho {
     if (!anidbAid) throw new Error("No anidbAid provided");
 
     const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
-    const json = await res.json();
+    const data = await res.json();
 
-    const releases = this.getReleases(json);
     const excl = this.buildExclusions(resolution, exclusions);
 
-    return releases.length
-      ? this.map(releases, false, options?.useTorrent, excl)
+    return data?.data?.releases?.length
+      ? this.map(data.data.releases, options?.useTorrent, excl)
       : [];
   }
 
