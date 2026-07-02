@@ -1,59 +1,89 @@
 const QUALITIES = [ "1080", "720", "540", "480" ];
 
+const DUBBED_REGEX = /\b(?:dubs?|dubbed|dual(?:[\s._-]*audio)?)\b/i;
+
 export default new class Tosho {
-  url=atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEv");
-  _buildQuery({resolution: resolution, exclusions: exclusions}) {
-    const base = "&qx=1&q=(dub|dubbed|dual*)";
-    if (!exclusions?.length && !resolution) return base;
-    const excl = `!("${exclusions.join('"|"')}")`;
-    if (!resolution) return base + excl;
-    return base + excl + `!(*${QUALITIES.filter(q => q !== resolution).join("*|*")}*)`;
+  url = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEv");
+
+  buildExclusions(resolution, exclusions = []) {
+    const list = Array.isArray(exclusions) ? exclusions : [];
+
+    if (!resolution) return list;
+
+    return list.concat(
+      QUALITIES
+        .filter(q => q !== String(resolution))
+        .map(q => `${q}p`)
+    );
   }
-  map(entries, batch = !1, useTorrent = !1) {
-    return entries.map(entry => ({
-      title: entry.title || entry.torrent_name,
-      link: useTorrent ? entry.torrent_url : entry.magnet_uri,
-      seeders: (entry.seeders || 0) >= 3e4 ? 0 : entry.seeders || 0,
-      leechers: (entry.leechers || 0) >= 3e4 ? 0 : entry.leechers || 0,
-      downloads: entry.torrent_downloaded_count || 0,
-      hash: entry.info_hash,
-      size: entry.total_size,
-      accuracy: entry.anidb_fid && !batch ? "high" : "medium",
-      type: batch ? "batch" : void 0,
-      date: new Date(1e3 * entry.timestamp)
-    }));
+
+  map(entries, useTorrent = false, excl = []) {
+    const exclusions = excl.map(e => String(e).toLowerCase());
+
+    return entries
+      .filter(entry => {
+        const title = entry.title || "";
+        const lowerTitle = title.toLowerCase();
+
+        if (!DUBBED_REGEX.test(title)) return false;
+
+        if (exclusions.length && exclusions.some(e => lowerTitle.includes(e))) {
+          return false;
+        }
+
+        return true;
+      })
+      .map(entry => ({
+        title: entry.title,
+        link: useTorrent ? entry.torrent_url : entry.magnet,
+        seeders: (entry.seeders || 0) >= 3e4 ? 0 : entry.seeders || 0,
+        leechers: (entry.leechers || 0) >= 3e4 ? 0 : entry.leechers || 0,
+        downloads: entry.downloads || 0,
+        hash: entry.info_hash,
+        size: entry.size_bytes,
+        accuracy: "medium",
+        type: void 0,
+        date: new Date(entry.date_added)
+      }));
   }
-  async single({anidbEid: anidbEid, resolution: resolution, exclusions: exclusions}, options) {
+
+  async single({ anidbEid, resolution, exclusions = [] }, options) {
     if (!navigator.onLine) return [];
     if (!anidbEid) throw new Error("No anidbEid provided");
-    const query = this._buildQuery({
-      resolution: resolution,
-      exclusions: exclusions
-    }), res = await fetch(this.url + "?eid=" + anidbEid + query), data = await res.json();
-    return data.length ? this.map(data, !1, options?.useTorrent) : [];
+
+    const res = await fetch(this.url + "episodes/" + anidbEid + "?limit=100");
+    const data = await res.json();
+
+    const excl = this.buildExclusions(resolution, exclusions);
+
+    return data?.data?.releases?.length
+      ? this.map(data.data.releases, options?.useTorrent, excl)
+      : [];
   }
-  async batch({anidbAid: anidbAid, resolution: resolution, exclusions: exclusions, episode: episode}, options) {
+
+  batch = async () => [];
+
+  async movie({ anidbAid, resolution, exclusions = [] }, options) {
     if (!navigator.onLine) return [];
     if (!anidbAid) throw new Error("No anidbAid provided");
-    const query = this._buildQuery({
-      resolution: resolution,
-      exclusions: exclusions
-    }), res = await fetch(this.url + "?order=size-d&aid=" + anidbAid + query), data = (await res.json()).filter(entry => entry.num_files >= Math.min(24, Math.max(2, episode ?? 1)));
-    return data.length ? this.map(data, !0, options?.useTorrent) : [];
+
+    const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
+    const data = await res.json();
+
+    const excl = this.buildExclusions(resolution, exclusions);
+
+    return data?.data?.releases?.length
+      ? this.map(data.data.releases, options?.useTorrent, excl)
+      : [];
   }
-  async movie({anidbAid: anidbAid, resolution: resolution, exclusions: exclusions}, options) {
-    if (!navigator.onLine) return [];
-    if (!anidbAid) throw new Error("No anidbAid provided");
-    const query = this._buildQuery({
-      resolution: resolution,
-      exclusions: exclusions
-    }), res = await fetch(this.url + "?aid=" + anidbAid + query), data = await res.json();
-    return data.length ? this.map(data, !1, options?.useTorrent) : [];
-  }
+
   async test() {
     try {
-      if (!(await fetch(this.url)).ok) throw new Error(`Failed to load data from ${this.url}! Is the site down?`);
-      return !0;
+      if (!(await fetch(this.url)).ok) {
+        throw new Error(`Failed to load data from ${this.url}! Is the site down?`);
+      }
+
+      return true;
     } catch (error) {
       throw new Error(`Could not reach ${this.url}! Does the site work in your region?`);
     }
