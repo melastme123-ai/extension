@@ -13,7 +13,7 @@ const PLAIN_SINGLE_EPISODE_REGEX = /(?:^|[\s\]])-\s*\d{1,3}(?:v\d)?(?=[\s\[])/i;
 const WEAK_BATCH_REGEX = /\b(?:season[\s._-]*\d{1,2}|s\d{1,2})\b/i;
 
 export default new class NyaaDubbed {
-  base = atob("aHR0cHM6Ly90b3JyZW50LXNlYXJjaC1hcGktbGl2aWQudmVyY2VsLmFwcC9hcGkvbnlhYXNpLw==");
+  base = atob("aHR0cHM6Ly9ueWFhc2ktYXBpLnZlcmNlbC5hcHAvYXBpL3NlYXJjaA==");
 
   cleanTitle(title = "") {
     return title
