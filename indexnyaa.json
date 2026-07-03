@@ -13,6 +13,6 @@
     ],
     "icon": "https://nyaa.si/static/favicon.png",
     "update": "https://raw.githubusercontent.com/melastme123-ai/extension/main/indexnyaa.json",
-    "code": "https://raw.githubusercontent.com/melastme123-ai/extension/main/nyaa.js"
+    "code": "https://raw.githubusercontent.com/melastme123-ai/extension/refs/heads/main/nyaa.js"
   }
 ]
