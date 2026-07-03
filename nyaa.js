@@ -1,3 +1,5 @@
+const base = "https://nyaasi-api.vercel.app/api/search";
+
 const QUALITIES = [ "1080", "720", "540", "480" ];
 
 const DUBBED_REGEX = /\b(?:dub|dubs|dubbed|dual|dual[\s._-]*audio|eng[\s._-]*dub|english[\s._-]*dub|multi[\s._-]*audio|multi[\s._-]*dub)\b/i;
@@ -10,248 +12,322 @@ const SINGLE_EPISODE_REGEX = /\b(?:s\d{1,2}e\d{1,3}|episode[\s._-]*\d{1,3}|ep[\s
 
 const PLAIN_SINGLE_EPISODE_REGEX = /(?:^|[\s\]])-\s*\d{1,3}(?:v\d)?(?=[\s\[])/i;
 
-const WEAK_BATCH_REGEX = /\b(?:season[\s._-]*\d{1,2}|s\d{1,2})\b/i;
+export default {
+  async single(query, options) {
+    const {
+      titles,
+      episode,
+      absoluteEpisodeNumber,
+      exclusions = [],
+      resolution,
+      fetch: fetcher
+    } = query;
 
-export default new class NyaaDubbed {
-  base = "https://nyaasi-api.vercel.app/api/search";
+    if (!titles?.length) return [];
 
-  cleanTitle(title = "") {
-    return title
-      .replace(/[^\w\s-]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  unique(list) {
-    return [...new Set(list.filter(Boolean))];
-  }
-
-  cleanCount(value) {
-    const count = Number(value || 0);
-    return count >= 30000 ? 0 : count;
-  }
-
-  buildExclusions(resolution, exclusions = []) {
-    const list = Array.isArray(exclusions) ? exclusions : [];
-
-    if (!resolution) return list;
-
-    return list.concat(
-      QUALITIES
-        .filter(q => q !== String(resolution))
-        .map(q => `${q}p`)
-    );
-  }
-
-  isDubbed(title = "") {
-    return DUBBED_REGEX.test(title);
-  }
-
-  isBatch(title = "") {
-    if (EXPLICIT_BATCH_REGEX.test(title)) return true;
-    if (RANGE_BATCH_REGEX.test(title)) return true;
-
-    if (SINGLE_EPISODE_REGEX.test(title)) return false;
-    if (PLAIN_SINGLE_EPISODE_REGEX.test(title)) return false;
-
-    if (WEAK_BATCH_REGEX.test(title)) return true;
-
-    return false;
-  }
-
-  shouldExclude(title = "", exclusions = []) {
-    const lowerTitle = title.toLowerCase();
-
-    return exclusions.some(exclusion =>
-      lowerTitle.includes(String(exclusion).toLowerCase())
-    );
-  }
-
-  parseSize(sizeText = "") {
-    const match = String(sizeText).match(/([\d.]+)\s*([KMGT]?i?B|[KMGT]?B)/i);
-
-    if (!match) return 0;
-
-    const value = Number(match[1]);
-    const unit = match[2].toUpperCase();
-
-    const units = {
-      B: 1,
-      KB: 1000,
-      MB: 1000 ** 2,
-      GB: 1000 ** 3,
-      TB: 1000 ** 4,
-      KIB: 1024,
-      MIB: 1024 ** 2,
-      GIB: 1024 ** 3,
-      TIB: 1024 ** 4
-    };
-
-    return Math.round(value * (units[unit] || 1));
-  }
-
-  getHash(magnet = "") {
-    return magnet.match(/btih:([A-Za-z0-9]+)/)?.[1] || "";
-  }
-
-  normalizeItem(item) {
-    const title = item.Name || item.name || item.title || "";
-    const magnet = item.Magnet || item.magnet || "";
-    const torrent = item.Torrent || item.torrent || item.Link || item.link || "";
-
-    return {
-      title,
-      magnet,
-      torrent,
-      hash: this.getHash(magnet),
-      seeders: this.cleanCount(item.Seeders ?? item.seeders),
-      leechers: this.cleanCount(item.Leechers ?? item.leechers),
-      downloads: Number(item.Downloads || item.downloads || 0),
-      size: this.parseSize(item.Size || item.size || ""),
-      date: new Date(item.DateUploaded || item.date || item.created_at || Date.now())
-    };
-  }
-
-  async search(query) {
-    const res = await fetch(this.base + encodeURIComponent(query));
-    const data = await res.json();
-
-    if (!Array.isArray(data)) return [];
-
-    return data.map(item => this.normalizeItem(item));
-  }
-
-  async searchMany(queries) {
-    const results = [];
-
-    for (const query of this.unique(queries)) {
-      try {
-        results.push(...await this.search(query));
-      } catch {}
-    }
-
-    const seen = new Set();
-
-    return results.filter(item => {
-      const key = item.hash || item.magnet || item.torrent || item.title;
-
-      if (!key || seen.has(key)) return false;
-
-      seen.add(key);
-      return true;
+    return search({
+      titles,
+      episode,
+      absoluteEpisode: absoluteEpisodeNumber,
+      exclusions,
+      resolution,
+      batch: false,
+      fetcher
     });
-  }
+  },
 
-  titleVariants(titles = []) {
-    return this.unique(
-      titles
-        .slice(0, 3)
-        .map(title => this.cleanTitle(title))
-    );
-  }
+  async batch(query, options) {
+    const {
+      titles,
+      exclusions = [],
+      resolution,
+      fetch: fetcher
+    } = query;
 
-  map(entries, batch = false, useTorrent = false, exclusions = []) {
-    return entries
-      .filter(entry => this.isDubbed(entry.title))
-      .filter(entry => !this.shouldExclude(entry.title, exclusions))
-      .map(entry => ({
-        title: entry.title,
-        link: useTorrent && entry.torrent ? entry.torrent : entry.magnet || entry.torrent,
-        seeders: entry.seeders,
-        leechers: entry.leechers,
-        downloads: entry.downloads,
-        hash: entry.hash,
-        size: entry.size,
-        accuracy: "medium",
-        type: batch ? "batch" : void 0,
-        date: entry.date
-      }))
-      .filter(entry => entry.link);
-  }
-
-  async single({ titles, episode, resolution, exclusions = [] }, options) {
-    if (!navigator.onLine) return [];
     if (!titles?.length) return [];
 
-    const variants = this.titleVariants(titles);
-    const ep = episode ? episode.toString().padStart(2, "0") : "";
-    const queries = [];
+    return search({
+      titles,
+      exclusions,
+      resolution,
+      batch: true,
+      fetcher
+    });
+  },
 
-    for (const title of variants) {
-      if (ep) {
-        queries.push(`${title} ${ep} dub`);
-        queries.push(`${title} ${ep} dubbed`);
-        queries.push(`${title} ${ep} english dub`);
-        queries.push(`${title} ${ep} dual audio`);
-      } else {
-        queries.push(`${title} dub`);
-        queries.push(`${title} dubbed`);
-        queries.push(`${title} english dub`);
-        queries.push(`${title} dual audio`);
-      }
-    }
+  async movie(query, options) {
+    const {
+      titles,
+      resolution,
+      exclusions = [],
+      fetch: fetcher
+    } = query;
 
-    const results = await this.searchMany(queries);
-    const excl = this.buildExclusions(resolution, exclusions);
-
-    return this.map(results, false, options?.useTorrent, excl);
-  }
-
-  async batch({ titles, resolution, exclusions = [] }, options) {
-    if (!navigator.onLine) return [];
     if (!titles?.length) return [];
 
-    const variants = this.titleVariants(titles);
-    const queries = [];
-
-    for (const title of variants) {
-      queries.push(`${title} batch dub`);
-      queries.push(`${title} batch dual audio`);
-      queries.push(`${title} complete dub`);
-      queries.push(`${title} complete dual audio`);
-      queries.push(`${title} season dual audio`);
-      queries.push(`${title} dubbed`);
-      queries.push(`${title} dual audio`);
-    }
-
-    const results = await this.searchMany(queries);
-    const batches = results.filter(entry => this.isBatch(entry.title));
-    const excl = this.buildExclusions(resolution, exclusions);
-
-    return this.map(batches, true, options?.useTorrent, excl);
-  }
-
-  async movie({ titles, resolution, exclusions = [] }, options) {
-    if (!navigator.onLine) return [];
-    if (!titles?.length) return [];
-
-    const variants = this.titleVariants(titles);
-    const queries = [];
-
-    for (const title of variants) {
-      queries.push(`${title} dub`);
-      queries.push(`${title} dubbed`);
-      queries.push(`${title} english dub`);
-      queries.push(`${title} dual audio`);
-    }
-
-    const results = await this.searchMany(queries);
-    const excl = this.buildExclusions(resolution, exclusions);
-
-    return this.map(results, false, options?.useTorrent, excl);
-  }
+    return search({
+      titles,
+      exclusions,
+      resolution,
+      batch: false,
+      fetcher
+    });
+  },
 
   async test() {
-    try {
-      const res = await fetch(this.base + encodeURIComponent("one piece dub"));
+    const res = await fetch(base + "?q=test&category=1_0");
 
-      if (!res.ok) {
-        throw new Error("Failed to reach Nyaa proxy API.");
-      }
-
-      return true;
-    } catch {
-      throw new Error("Could not reach the Nyaa proxy API. The proxy may be down or blocked.");
+    if (!res.ok) {
+      throw new Error(`Nyaa API unavailable (HTTP ${res.status})`);
     }
+
+    return true;
   }
-}();
+};
+
+function cleanTitle(title = "") {
+  return title
+    .replace(/[^\w\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function unique(list) {
+  return [...new Set(list.filter(Boolean))];
+}
+
+function cleanCount(value) {
+  const count = Number(value || 0);
+  return count >= 30000 ? 0 : count;
+}
+
+function isDubbed(title = "") {
+  return DUBBED_REGEX.test(title);
+}
+
+function isExplicitBatch(title = "") {
+  return EXPLICIT_BATCH_REGEX.test(title) || RANGE_BATCH_REGEX.test(title);
+}
+
+function isClearlySingleEpisode(title = "") {
+  return SINGLE_EPISODE_REGEX.test(title) || PLAIN_SINGLE_EPISODE_REGEX.test(title);
+}
+
+function shouldExclude(title = "", exclusions = []) {
+  const lowerTitle = title.toLowerCase();
+
+  return exclusions.some(exclusion =>
+    lowerTitle.includes(String(exclusion).toLowerCase())
+  );
+}
+
+function buildExclusions(resolution, exclusions = []) {
+  const list = Array.isArray(exclusions) ? exclusions : [];
+
+  if (!resolution) return list;
+
+  return list.concat(
+    QUALITIES
+      .filter(q => q !== String(resolution))
+      .map(q => `${q}p`)
+  );
+}
+
+function chooseTitle(titles = []) {
+  const latin = titles.filter(t => /[a-zA-Z]/.test(t));
+  const pool = latin.length ? latin : titles;
+
+  return pool.reduce((a, b) => a.length <= b.length ? a : b);
+}
+
+function getExtraTitles(titles = [], mainTitle = "") {
+  const latin = titles.filter(t => /[a-zA-Z]/.test(t));
+  const pool = latin.length ? latin : titles;
+
+  return pool
+    .filter(t => t !== mainTitle)
+    .slice(0, 2)
+    .join("|||");
+}
+
+function getHash(item) {
+  const hash = item.hash || "";
+
+  if (hash) return hash;
+
+  const magnet = item.magnet || "";
+  return magnet.match(/btih:([A-Za-z0-9]+)/)?.[1] || "";
+}
+
+function normalizeItem(item) {
+  const title = item.title || item.Name || item.name || "Unknown";
+  const magnet = item.magnet || item.Magnet || "";
+  const link = item.link || item.Link || "";
+
+  return {
+    title,
+    link: magnet || link || item.hash || "",
+    hash: getHash(item),
+    seeders: cleanCount(item.seeders ?? item.Seeders),
+    leechers: cleanCount(item.leechers ?? item.Leechers),
+    downloads: Number(item.downloads ?? item.Downloads ?? 0),
+    size: Number(item.size ?? item.Size ?? 0) || 0,
+    date: item.date || item.DateUploaded ? new Date(item.date || item.DateUploaded) : new Date(0),
+    accuracy: item.accuracy || "medium"
+  };
+}
+
+function buildParams({
+  q,
+  title,
+  category = "1_0",
+  batch = false,
+  episode,
+  absoluteEpisode,
+  resolution,
+  exclusions = [],
+  extraTitles = ""
+}) {
+  const params = "?q=" + encodeURIComponent(q)
+    + "&title=" + encodeURIComponent(title)
+    + "&category=" + encodeURIComponent(category)
+    + "&batch=" + String(batch)
+    + (episode != null ? "&episode=" + encodeURIComponent(String(episode)) : "")
+    + (absoluteEpisode != null ? "&absoluteEpisode=" + encodeURIComponent(String(absoluteEpisode)) : "")
+    + (resolution ? "&resolution=" + encodeURIComponent(String(resolution)) : "")
+    + (exclusions.length ? "&exclusions=" + encodeURIComponent(exclusions.join(",")) : "")
+    + (extraTitles ? "&titles=" + encodeURIComponent(extraTitles) : "");
+
+  return params;
+}
+
+async function fetchSearch({
+  q,
+  title,
+  batch,
+  episode,
+  absoluteEpisode,
+  resolution,
+  exclusions,
+  extraTitles,
+  fetcher
+}) {
+  const doFetch = fetcher || fetch;
+
+  const params = buildParams({
+    q,
+    title,
+    batch,
+    episode,
+    absoluteEpisode,
+    resolution,
+    exclusions,
+    extraTitles
+  });
+
+  const res = await doFetch(base + params);
+
+  if (!res.ok) return [];
+
+  const data = await res.json();
+
+  if (!Array.isArray(data)) return [];
+
+  return data.map(normalizeItem);
+}
+
+async function search({
+  titles,
+  episode,
+  absoluteEpisode,
+  exclusions = [],
+  resolution,
+  batch,
+  fetcher
+}) {
+  const title = chooseTitle(titles);
+  const clean = cleanTitle(title);
+  const extraTitles = getExtraTitles(titles, title);
+
+  const queryParts = [];
+
+  if (!batch && episode != null) {
+    queryParts.push(String(episode).padStart(2, "0"));
+  }
+
+  if (batch) {
+    queryParts.push("Batch");
+  }
+
+  if (resolution) {
+    queryParts.push(`${resolution}p`);
+  }
+
+  const dubTerms = [
+    "dub",
+    "dubbed",
+    "english dub",
+    "dual audio"
+  ];
+
+  const queries = dubTerms.map(term =>
+    unique([clean, ...queryParts, term]).join(" ")
+  );
+
+  const allResults = [];
+
+  for (const q of unique(queries)) {
+    try {
+      const results = await fetchSearch({
+        q,
+        title,
+        batch,
+        episode,
+        absoluteEpisode,
+        resolution,
+        exclusions,
+        extraTitles,
+        fetcher
+      });
+
+      allResults.push(...results);
+    } catch {}
+  }
+
+  const seen = new Set();
+
+  const deduped = allResults.filter(item => {
+    const key = item.hash || item.link || item.title;
+
+    if (!key || seen.has(key)) return false;
+
+    seen.add(key);
+    return true;
+  });
+
+  const finalExclusions = buildExclusions(resolution, exclusions);
+
+  return deduped
+    .filter(item => isDubbed(item.title))
+    .filter(item => !shouldExclude(item.title, finalExclusions))
+    .filter(item => {
+      if (!batch) return true;
+
+      if (isExplicitBatch(item.title)) return true;
+
+      return !isClearlySingleEpisode(item.title);
+    })
+    .map(item => ({
+      title: item.title,
+      link: item.link,
+      hash: item.hash,
+      seeders: item.seeders,
+      leechers: item.leechers,
+      downloads: item.downloads,
+      size: item.size,
+      date: item.date,
+      accuracy: item.accuracy,
+      type: batch ? "batch" : void 0
+    }))
+    .filter(item => item.link);
+}
