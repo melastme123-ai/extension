@@ -13,7 +13,7 @@ const PLAIN_SINGLE_EPISODE_REGEX = /(?:^|[\s\]])-\s*\d{1,3}(?:v\d)?(?=[\s\[])/i;
 const WEAK_BATCH_REGEX = /\b(?:season[\s._-]*\d{1,2}|s\d{1,2})\b/i;
 
 export default new class NyaaDubbed {
-  const base = "https://nyaasi-api.vercel.app/api/search";
+  base = "https://nyaasi-api.vercel.app/api/search";
 
   cleanTitle(title = "") {
     return title
