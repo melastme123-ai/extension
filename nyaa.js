@@ -9,7 +9,7 @@ const SINGLE_EPISODE_REGEX = /\b(?:s\d{1,2}e\d{1,3}|episode[\s._-]*\d{1,3}|ep[\s
 const WEAK_BATCH_REGEX = /\b(?:season[\s._-]*\d{1,2}|s\d{1,2})\b/i;
 
 export default new class NyaaDubbed {
-  base = "https://nyaa.si/";
+  base = "https://nyaa.si/?page=rss";
 
   cleanTitle(title = "") {
     return title.replace(/[^\w\s-]/g, " ").replace(/\s+/g, " ").trim();
