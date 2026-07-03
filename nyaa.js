@@ -60,8 +60,8 @@ export default {
   async movie(query, options) {
     const {
       titles,
-      resolution,
       exclusions = [],
+      resolution,
       fetch: fetcher
     } = query;
 
@@ -93,10 +93,6 @@ function cleanTitle(title = "") {
     .replace(/[^\w\s-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function unique(list) {
-  return [...new Set(list.filter(Boolean))];
 }
 
 function cleanCount(value) {
@@ -148,7 +144,7 @@ function episodeMatches(title = "", episode, absoluteEpisode) {
   if (episode != null) possible.push(Number(episode));
   if (absoluteEpisode != null) possible.push(Number(absoluteEpisode));
 
-  const nums = unique(possible.filter(n => Number.isFinite(n) && n > 0));
+  const nums = [...new Set(possible.filter(n => Number.isFinite(n) && n > 0))];
 
   if (!nums.length) return true;
 
@@ -254,104 +250,24 @@ function buildParams({
     + (extraTitles ? "&titles=" + encodeURIComponent(extraTitles) : "");
 }
 
-function buildQueriesForMode({
-  mode,
-  clean,
-  episode,
-  absoluteEpisode,
-  resolution
-}) {
-  const queries = [];
+function buildQuery({ mode, clean, episode, absoluteEpisode, resolution }) {
+  const parts = [clean];
+
   const ep = episode ?? absoluteEpisode;
 
-  if (mode === "single") {
-    if (ep == null) {
-      queries.push(`${clean}`);
-      queries.push(`${clean} dub`);
-      queries.push(`${clean} dubbed`);
-      queries.push(`${clean} english dub`);
-      queries.push(`${clean} dual audio`);
-
-      if (resolution) {
-        queries.push(`${clean} ${resolution}p`);
-        queries.push(`${clean} dub ${resolution}p`);
-        queries.push(`${clean} dual audio ${resolution}p`);
-      }
-
-      return unique(queries);
-    }
-
-    const epRaw = String(ep);
-    const ep2 = epRaw.padStart(2, "0");
-    const ep3 = epRaw.padStart(3, "0");
-
-    const epTerms = unique([
-      epRaw,
-      ep2,
-      ep3,
-      `E${epRaw}`,
-      `E${ep2}`,
-      `EP${epRaw}`,
-      `EP${ep2}`,
-      `Episode ${epRaw}`,
-      `Episode ${ep2}`
-    ]);
-
-    for (const epTerm of epTerms) {
-      queries.push(`${clean} ${epTerm}`);
-
-      if (resolution) {
-        queries.push(`${clean} ${epTerm} ${resolution}p`);
-      }
-
-      queries.push(`${clean} ${epTerm} dub`);
-      queries.push(`${clean} ${epTerm} dubbed`);
-      queries.push(`${clean} ${epTerm} english dub`);
-      queries.push(`${clean} ${epTerm} dual audio`);
-    }
-
-    return unique(queries);
+  if (mode === "single" && ep != null) {
+    parts.push(String(ep).padStart(2, "0"));
   }
 
   if (mode === "batch") {
-    queries.push(`${clean} batch`);
-    queries.push(`${clean} batch dub`);
-    queries.push(`${clean} batch dubbed`);
-    queries.push(`${clean} batch dual audio`);
-    queries.push(`${clean} complete`);
-    queries.push(`${clean} complete dub`);
-    queries.push(`${clean} complete dual audio`);
-    queries.push(`${clean} season`);
-    queries.push(`${clean} season dual audio`);
-    queries.push(`${clean} dub`);
-    queries.push(`${clean} dubbed`);
-    queries.push(`${clean} dual audio`);
-
-    if (resolution) {
-      queries.push(`${clean} batch ${resolution}p`);
-      queries.push(`${clean} dual audio ${resolution}p`);
-    }
-
-    return unique(queries);
+    parts.push("Batch");
   }
 
-  if (mode === "movie") {
-    queries.push(`${clean}`);
-    queries.push(`${clean} dub`);
-    queries.push(`${clean} dubbed`);
-    queries.push(`${clean} english dub`);
-    queries.push(`${clean} dual audio`);
-
-    if (resolution) {
-      queries.push(`${clean} ${resolution}p`);
-      queries.push(`${clean} dub ${resolution}p`);
-      queries.push(`${clean} dual audio ${resolution}p`);
-    }
-
-    return unique(queries);
+  if (resolution) {
+    parts.push(`${resolution}p`);
   }
 
-  return [clean];
+  return parts.join(" ");
 }
 
 async function fetchSearch({
@@ -393,13 +309,10 @@ function keepForMode(item, mode, episode, absoluteEpisode) {
   const title = item.title || "";
 
   if (mode === "single") {
-    // Do not allow obvious batches in single results.
     if (isExplicitBatch(title)) return false;
 
-    // A single result should look like an actual episode.
     if (!isClearlySingleEpisode(title)) return false;
 
-    // If we know the episode number, make sure it matches.
     if (episode != null || absoluteEpisode != null) {
       return episodeMatches(title, episode, absoluteEpisode);
     }
@@ -410,7 +323,6 @@ function keepForMode(item, mode, episode, absoluteEpisode) {
   if (mode === "batch") {
     if (isExplicitBatch(title)) return true;
 
-    // Allows some unlabeled batches, but rejects obvious single episodes.
     return !isClearlySingleEpisode(title);
   }
 
@@ -437,7 +349,7 @@ async function search({
   const clean = cleanTitle(title);
   const extraTitles = getExtraTitles(titles, title);
 
-  const queries = buildQueriesForMode({
+  const q = buildQuery({
     mode,
     clean,
     episode,
@@ -445,40 +357,21 @@ async function search({
     resolution
   });
 
-  const allResults = [];
-
-  for (const q of unique(queries)) {
-    try {
-      const results = await fetchSearch({
-        q,
-        title,
-        batch,
-        episode,
-        absoluteEpisode,
-        resolution,
-        exclusions,
-        extraTitles,
-        fetcher
-      });
-
-      allResults.push(...results);
-    } catch {}
-  }
-
-  const seen = new Set();
-
-  const deduped = allResults.filter(item => {
-    const key = item.hash || item.link || item.title;
-
-    if (!key || seen.has(key)) return false;
-
-    seen.add(key);
-    return true;
+  const results = await fetchSearch({
+    q,
+    title,
+    batch,
+    episode,
+    absoluteEpisode,
+    resolution,
+    exclusions,
+    extraTitles,
+    fetcher
   });
 
   const finalExclusions = buildExclusions(resolution, exclusions);
 
-  return deduped
+  return results
     .filter(item => isDubbed(item.title))
     .filter(item => !shouldExclude(item.title, finalExclusions))
     .filter(item => keepForMode(item, mode, episode, absoluteEpisode))
