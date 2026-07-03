@@ -1,4 +1,4 @@
-const base = "https://nyaasi-api.vercel.app/api/search";
+const base = atob("aHR0cHM6Ly9ueWFhc2ktYXBpLnZlcmNlbC5hcHAvYXBpL3NlYXJjaA==");
 
 const QUALITIES = [ "1080", "720", "540", "480" ];
 
@@ -26,6 +26,7 @@ export default {
     if (!titles?.length) return [];
 
     return search({
+      mode: "single",
       titles,
       episode,
       absoluteEpisode: absoluteEpisodeNumber,
@@ -47,6 +48,7 @@ export default {
     if (!titles?.length) return [];
 
     return search({
+      mode: "batch",
       titles,
       exclusions,
       resolution,
@@ -66,6 +68,7 @@ export default {
     if (!titles?.length) return [];
 
     return search({
+      mode: "movie",
       titles,
       exclusions,
       resolution,
@@ -111,6 +114,32 @@ function isExplicitBatch(title = "") {
 
 function isClearlySingleEpisode(title = "") {
   return SINGLE_EPISODE_REGEX.test(title) || PLAIN_SINGLE_EPISODE_REGEX.test(title);
+}
+
+function episodeMatches(title = "", episode, absoluteEpisode) {
+  const possible = [];
+
+  if (episode != null) possible.push(Number(episode));
+  if (absoluteEpisode != null) possible.push(Number(absoluteEpisode));
+
+  const nums = unique(possible.filter(n => Number.isFinite(n) && n > 0));
+
+  if (!nums.length) return true;
+
+  return nums.some(num => {
+    const ep = String(num);
+    const ep2 = ep.padStart(2, "0");
+    const ep3 = ep.padStart(3, "0");
+
+    const patterns = [
+      new RegExp(`\\bs\\d{1,2}e0*${ep}\\b`, "i"),
+      new RegExp(`\\b(?:e|ep|episode)[\\s._-]*0*${ep}\\b`, "i"),
+      new RegExp(`-[\\s._-]*(?:${ep}|${ep2}|${ep3})(?:v\\d)?(?=[\\s._\\[\\(\\]\\)]|$)`, "i"),
+      new RegExp(`[\\[\\(](?:${ep}|${ep2}|${ep3})(?:v\\d)?[\\]\\)]`, "i")
+    ];
+
+    return patterns.some(pattern => pattern.test(title));
+  });
 }
 
 function shouldExclude(title = "", exclusions = []) {
@@ -188,7 +217,7 @@ function buildParams({
   exclusions = [],
   extraTitles = ""
 }) {
-  const params = "?q=" + encodeURIComponent(q)
+  return "?q=" + encodeURIComponent(q)
     + "&title=" + encodeURIComponent(title)
     + "&category=" + encodeURIComponent(category)
     + "&batch=" + String(batch)
@@ -197,8 +226,6 @@ function buildParams({
     + (resolution ? "&resolution=" + encodeURIComponent(String(resolution)) : "")
     + (exclusions.length ? "&exclusions=" + encodeURIComponent(exclusions.join(",")) : "")
     + (extraTitles ? "&titles=" + encodeURIComponent(extraTitles) : "");
-
-  return params;
 }
 
 async function fetchSearch({
@@ -236,7 +263,34 @@ async function fetchSearch({
   return data.map(normalizeItem);
 }
 
+function keepForMode(item, mode, episode, absoluteEpisode) {
+  const title = item.title || "";
+
+  if (mode === "single") {
+    if (isExplicitBatch(title)) return false;
+    if (!episodeMatches(title, episode, absoluteEpisode)) return false;
+
+    return true;
+  }
+
+  if (mode === "batch") {
+    if (isExplicitBatch(title)) return true;
+
+    // This keeps unlabeled batches, but rejects obvious single episodes like S02E11 or - 11.
+    return !isClearlySingleEpisode(title);
+  }
+
+  if (mode === "movie") {
+    if (isExplicitBatch(title)) return false;
+
+    return true;
+  }
+
+  return true;
+}
+
 async function search({
+  mode,
   titles,
   episode,
   absoluteEpisode,
@@ -251,11 +305,11 @@ async function search({
 
   const queryParts = [];
 
-  if (!batch && episode != null) {
+  if (mode === "single" && episode != null) {
     queryParts.push(String(episode).padStart(2, "0"));
   }
 
-  if (batch) {
+  if (mode === "batch") {
     queryParts.push("Batch");
   }
 
@@ -310,13 +364,7 @@ async function search({
   return deduped
     .filter(item => isDubbed(item.title))
     .filter(item => !shouldExclude(item.title, finalExclusions))
-    .filter(item => {
-      if (!batch) return true;
-
-      if (isExplicitBatch(item.title)) return true;
-
-      return !isClearlySingleEpisode(item.title);
-    })
+    .filter(item => keepForMode(item, mode, episode, absoluteEpisode))
     .map(item => ({
       title: item.title,
       link: item.link,
@@ -327,7 +375,7 @@ async function search({
       size: item.size,
       date: item.date,
       accuracy: item.accuracy,
-      type: batch ? "batch" : void 0
+      type: mode === "batch" ? "batch" : void 0
     }))
     .filter(item => item.link);
 }
