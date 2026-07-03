@@ -1,0 +1,18 @@
+[
+  {
+    "manifestVersion": 2,
+    "name": "Nyaa Dub)",
+    "id": "nyaa-dub",
+    "version": "0.0.1",
+    "type": "torrent",
+    "accuracy": "high",
+    "ratio": 0,
+    "media": "dub",
+    "languages": [
+      "US"
+    ],
+    "icon": "https://nyaa.si/static/favicon.png",
+    "update": "https://raw.githubusercontent.com/melastme123-ai/extension/refs/heads/main/indexnyaa.json",
+    "code": "https://raw.githubusercontent.com/melastme123-ai/extension/refs/heads/main/nyaa.js",
+  }
+]
