@@ -104,6 +104,32 @@ function cleanCount(value) {
   return count >= 30000 ? 0 : count;
 }
 
+function parseSize(value) {
+  if (typeof value === "number") return value;
+
+  const text = String(value || "");
+  const match = text.match(/([\d.]+)\s*([KMGT]?i?B|[KMGT]?B)/i);
+
+  if (!match) return Number(value || 0) || 0;
+
+  const number = Number(match[1]);
+  const unit = match[2].toUpperCase();
+
+  const units = {
+    B: 1,
+    KB: 1000,
+    MB: 1000 ** 2,
+    GB: 1000 ** 3,
+    TB: 1000 ** 4,
+    KIB: 1024,
+    MIB: 1024 ** 2,
+    GIB: 1024 ** 3,
+    TIB: 1024 ** 4
+  };
+
+  return Math.round(number * (units[unit] || 1));
+}
+
 function isDubbed(title = "") {
   return DUBBED_REGEX.test(title);
 }
@@ -184,7 +210,7 @@ function getHash(item) {
 
   if (hash) return hash;
 
-  const magnet = item.magnet || "";
+  const magnet = item.magnet || item.Magnet || "";
   return magnet.match(/btih:([A-Za-z0-9]+)/)?.[1] || "";
 }
 
@@ -200,7 +226,7 @@ function normalizeItem(item) {
     seeders: cleanCount(item.seeders ?? item.Seeders),
     leechers: cleanCount(item.leechers ?? item.Leechers),
     downloads: Number(item.downloads ?? item.Downloads ?? 0),
-    size: Number(item.size ?? item.Size ?? 0) || 0,
+    size: parseSize(item.size ?? item.Size ?? 0),
     date: item.date || item.DateUploaded ? new Date(item.date || item.DateUploaded) : new Date(0),
     accuracy: item.accuracy || "medium"
   };
@@ -226,6 +252,106 @@ function buildParams({
     + (resolution ? "&resolution=" + encodeURIComponent(String(resolution)) : "")
     + (exclusions.length ? "&exclusions=" + encodeURIComponent(exclusions.join(",")) : "")
     + (extraTitles ? "&titles=" + encodeURIComponent(extraTitles) : "");
+}
+
+function buildQueriesForMode({
+  mode,
+  clean,
+  episode,
+  absoluteEpisode,
+  resolution
+}) {
+  const queries = [];
+  const ep = episode ?? absoluteEpisode;
+
+  if (mode === "single") {
+    if (ep == null) {
+      queries.push(`${clean}`);
+      queries.push(`${clean} dub`);
+      queries.push(`${clean} dubbed`);
+      queries.push(`${clean} english dub`);
+      queries.push(`${clean} dual audio`);
+
+      if (resolution) {
+        queries.push(`${clean} ${resolution}p`);
+        queries.push(`${clean} dub ${resolution}p`);
+        queries.push(`${clean} dual audio ${resolution}p`);
+      }
+
+      return unique(queries);
+    }
+
+    const epRaw = String(ep);
+    const ep2 = epRaw.padStart(2, "0");
+    const ep3 = epRaw.padStart(3, "0");
+
+    const epTerms = unique([
+      epRaw,
+      ep2,
+      ep3,
+      `E${epRaw}`,
+      `E${ep2}`,
+      `EP${epRaw}`,
+      `EP${ep2}`,
+      `Episode ${epRaw}`,
+      `Episode ${ep2}`
+    ]);
+
+    for (const epTerm of epTerms) {
+      queries.push(`${clean} ${epTerm}`);
+
+      if (resolution) {
+        queries.push(`${clean} ${epTerm} ${resolution}p`);
+      }
+
+      queries.push(`${clean} ${epTerm} dub`);
+      queries.push(`${clean} ${epTerm} dubbed`);
+      queries.push(`${clean} ${epTerm} english dub`);
+      queries.push(`${clean} ${epTerm} dual audio`);
+    }
+
+    return unique(queries);
+  }
+
+  if (mode === "batch") {
+    queries.push(`${clean} batch`);
+    queries.push(`${clean} batch dub`);
+    queries.push(`${clean} batch dubbed`);
+    queries.push(`${clean} batch dual audio`);
+    queries.push(`${clean} complete`);
+    queries.push(`${clean} complete dub`);
+    queries.push(`${clean} complete dual audio`);
+    queries.push(`${clean} season`);
+    queries.push(`${clean} season dual audio`);
+    queries.push(`${clean} dub`);
+    queries.push(`${clean} dubbed`);
+    queries.push(`${clean} dual audio`);
+
+    if (resolution) {
+      queries.push(`${clean} batch ${resolution}p`);
+      queries.push(`${clean} dual audio ${resolution}p`);
+    }
+
+    return unique(queries);
+  }
+
+  if (mode === "movie") {
+    queries.push(`${clean}`);
+    queries.push(`${clean} dub`);
+    queries.push(`${clean} dubbed`);
+    queries.push(`${clean} english dub`);
+    queries.push(`${clean} dual audio`);
+
+    if (resolution) {
+      queries.push(`${clean} ${resolution}p`);
+      queries.push(`${clean} dub ${resolution}p`);
+      queries.push(`${clean} dual audio ${resolution}p`);
+    }
+
+    return unique(queries);
+  }
+
+  return [clean];
 }
 
 async function fetchSearch({
@@ -267,8 +393,16 @@ function keepForMode(item, mode, episode, absoluteEpisode) {
   const title = item.title || "";
 
   if (mode === "single") {
+    // Do not allow obvious batches in single results.
     if (isExplicitBatch(title)) return false;
-    if (!episodeMatches(title, episode, absoluteEpisode)) return false;
+
+    // A single result should look like an actual episode.
+    if (!isClearlySingleEpisode(title)) return false;
+
+    // If we know the episode number, make sure it matches.
+    if (episode != null || absoluteEpisode != null) {
+      return episodeMatches(title, episode, absoluteEpisode);
+    }
 
     return true;
   }
@@ -276,7 +410,7 @@ function keepForMode(item, mode, episode, absoluteEpisode) {
   if (mode === "batch") {
     if (isExplicitBatch(title)) return true;
 
-    // This keeps unlabeled batches, but rejects obvious single episodes like S02E11 or - 11.
+    // Allows some unlabeled batches, but rejects obvious single episodes.
     return !isClearlySingleEpisode(title);
   }
 
@@ -303,30 +437,13 @@ async function search({
   const clean = cleanTitle(title);
   const extraTitles = getExtraTitles(titles, title);
 
-  const queryParts = [];
-
-  if (mode === "single" && episode != null) {
-    queryParts.push(String(episode).padStart(2, "0"));
-  }
-
-  if (mode === "batch") {
-    queryParts.push("Batch");
-  }
-
-  if (resolution) {
-    queryParts.push(`${resolution}p`);
-  }
-
-  const dubTerms = [
-    "dub",
-    "dubbed",
-    "english dub",
-    "dual audio"
-  ];
-
-  const queries = dubTerms.map(term =>
-    unique([clean, ...queryParts, term]).join(" ")
-  );
+  const queries = buildQueriesForMode({
+    mode,
+    clean,
+    episode,
+    absoluteEpisode,
+    resolution
+  });
 
   const allResults = [];
 
