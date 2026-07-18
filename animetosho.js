@@ -14,8 +14,11 @@ export default new class ToshoDubbed {
   // New AnimeTosho v1 API
   url = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEv");
 
-  // Fallback title-search feed
-  searchUrl = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24=");
+  // General AnimeTosho JSON feed for title fallback
+  searchUrls = [
+    atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24="),
+    atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ub3JnL2pzb24=")
+  ];
 
   cleanCount(value) {
     const count = Number(value || 0);
@@ -23,7 +26,7 @@ export default new class ToshoDubbed {
   }
 
   cleanSearchTitle(title = "") {
-    return title
+    return String(title)
       .replace(/[^\w\s-]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -31,15 +34,6 @@ export default new class ToshoDubbed {
 
   unique(list) {
     return [...new Set(list.filter(Boolean))];
-  }
-
-  titleVariants(titles = []) {
-    return this.unique(
-      titles
-        .filter(title => typeof title === "string" && title.trim())
-        .slice(0, 3)
-        .map(title => this.cleanSearchTitle(title))
-    );
   }
 
   buildExclusions(resolution, exclusions = []) {
@@ -52,20 +46,6 @@ export default new class ToshoDubbed {
         .filter(q => q !== String(resolution))
         .map(q => `${q}p`)
     );
-  }
-
-  buildFeedQuery(title, resolution, exclusions = []) {
-    let q = `${title} (dub|dubbed|dual*)`;
-
-    if (exclusions?.length) {
-      q += ` !("${exclusions.join('"|"')}")`;
-    }
-
-    if (resolution) {
-      q += ` !(*${QUALITIES.filter(q => q !== String(resolution)).join("*|*")}*)`;
-    }
-
-    return "?qx=1&q=" + encodeURIComponent(q);
   }
 
   getReleases(data) {
@@ -91,7 +71,6 @@ export default new class ToshoDubbed {
   getDate(entry) {
     if (entry.date_added) return new Date(entry.date_added);
     if (entry.timestamp) return new Date(1000 * entry.timestamp);
-
     return new Date(0);
   }
 
@@ -115,24 +94,16 @@ export default new class ToshoDubbed {
     const fileCount = this.getFileCount(entry);
     const minFiles = Math.min(24, Math.max(2, episode ?? 1));
 
-    // Trust obvious batch words first.
-    // Example: Batch, Complete, 01-12, Episodes 01-12
-    if (STRONG_BATCH_REGEX.test(title)) {
-      return true;
-    }
+    if (STRONG_BATCH_REGEX.test(title)) return true;
 
-    // Reject obvious single episodes.
-    // Example: S02E11, EP 11, Episode 11, - 11
     if (SINGLE_EPISODE_REGEX.test(title) || PLAIN_SINGLE_EPISODE_REGEX.test(title)) {
       return false;
     }
 
-    // Use file count only after title checks.
     if (typeof fileCount === "number" && fileCount >= minFiles) {
       return true;
     }
 
-    // Weak fallback for things like "Season 01" or "S01".
     if (WEAK_BATCH_REGEX.test(title)) {
       return true;
     }
@@ -167,6 +138,71 @@ export default new class ToshoDubbed {
       .filter(entry => entry.link);
   }
 
+  titleVariants(titles = []) {
+    const cleaned = this.unique(
+      titles
+        .filter(title => typeof title === "string" && title.trim())
+        .map(title => this.cleanSearchTitle(title))
+    );
+
+    const extra = [];
+
+    for (const title of cleaned) {
+      const words = title.split(/\s+/).filter(Boolean);
+
+      // For very long titles, search the first few words too.
+      if (words.length > 4) {
+        extra.push(words.slice(0, 4).join(" "));
+        extra.push(words.slice(0, 6).join(" "));
+      }
+
+      // If title has a dash-style subtitle, also search the main part.
+      const mainPart = title.split(/\s+-\s+|\s+:\s+/)[0]?.trim();
+      if (mainPart && mainPart.length >= 3) extra.push(mainPart);
+    }
+
+    // Helpful fallback for this anime because AnimeTosho title uses SHIBOYUGI.
+    const joined = cleaned.join(" ").toLowerCase();
+    if (
+      joined.includes("death games") ||
+      joined.includes("shibou yuugi") ||
+      joined.includes("shibou yugi") ||
+      joined.includes("playing death")
+    ) {
+      extra.push("SHIBOYUGI");
+      extra.push("Playing Death Games");
+      extra.push("Shibou Yuugi");
+    }
+
+    return this.unique([...cleaned, ...extra]).slice(0, 8);
+  }
+
+  buildFeedUrls(query) {
+    const urls = [];
+
+    for (const base of this.searchUrls) {
+      urls.push(base + "?qx=1&q=" + encodeURIComponent(query));
+      urls.push(base + "?q=" + encodeURIComponent(query));
+    }
+
+    return urls;
+  }
+
+  async feedSearch(query) {
+    for (const url of this.buildFeedUrls(query)) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+
+        const data = await res.json();
+
+        if (Array.isArray(data)) return data;
+      } catch {}
+    }
+
+    return [];
+  }
+
   async titleSearch({ titles = [], resolution, exclusions = [] }, options, batch = false, episode) {
     if (!titles?.length) return [];
 
@@ -174,19 +210,18 @@ export default new class ToshoDubbed {
     const allResults = [];
 
     for (const title of variants) {
-      try {
-        const res = await fetch(
-          this.searchUrl + this.buildFeedQuery(title, resolution, exclusions)
-        );
+      const queries = this.unique([
+        `${title} dub`,
+        `${title} dubbed`,
+        `${title} english dub`,
+        `${title} dual audio`,
+        title
+      ]);
 
-        if (!res.ok) continue;
-
-        const data = await res.json();
-
-        if (Array.isArray(data)) {
-          allResults.push(...data);
-        }
-      } catch {}
+      for (const q of queries) {
+        const results = await this.feedSearch(q);
+        allResults.push(...results);
+      }
     }
 
     const seen = new Set();
@@ -200,18 +235,18 @@ export default new class ToshoDubbed {
       return true;
     });
 
+    const excl = this.buildExclusions(resolution, exclusions);
+
     const filtered = batch
       ? deduped.filter(entry => this.isBatch(entry, episode))
       : deduped;
 
-    return this.map(filtered, batch, options?.useTorrent, this.buildExclusions(resolution, exclusions));
+    return this.map(filtered, batch, options?.useTorrent, excl);
   }
 
   async single({ anidbEid, anidbAid, titles = [], resolution, exclusions = [] }, options) {
     if (!navigator.onLine) return [];
 
-    // Movies/specials sometimes do not have an AniDB episode ID.
-    // If there is no episode ID but there is an anime ID, try movie search first.
     if (!anidbEid && anidbAid) {
       const movieResults = await this.movie({ anidbAid, titles, resolution, exclusions }, options);
 
@@ -220,7 +255,6 @@ export default new class ToshoDubbed {
       return this.titleSearch({ titles, resolution, exclusions }, options, false);
     }
 
-    // If there is no AniDB episode ID at all, fall back to title search.
     if (!anidbEid) {
       return this.titleSearch({ titles, resolution, exclusions }, options, false);
     }
@@ -241,7 +275,6 @@ export default new class ToshoDubbed {
       }
     } catch {}
 
-    // If AniDB episode lookup gives nothing, try title search.
     return this.titleSearch({ titles, resolution, exclusions }, options, false);
   }
 
