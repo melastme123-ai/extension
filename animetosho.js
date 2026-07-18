@@ -104,16 +104,23 @@ export default new class Tosho {
       }));
   }
 
-  async single({ anidbEid, resolution, exclusions = [] }, options) {
+  async single({ anidbEid, anidbAid, resolution, exclusions = [] }, options) {
     if (!navigator.onLine) return [];
-    if (!anidbEid) throw new Error("No anidbEid provided");
-
+  
+    // Movies sometimes do not have an AniDB episode ID.
+    // If there is no episode ID but there is an anime ID, search like a movie.
+    if (!anidbEid && anidbAid) {
+      return this.movie({ anidbAid, resolution, exclusions }, options);
+    }
+  
+    if (!anidbEid) return [];
+  
     const res = await fetch(this.url + "episodes/" + anidbEid + "?limit=100");
     const json = await res.json();
-
+  
     const releases = this.getReleases(json);
     const excl = this.buildExclusions(resolution, exclusions);
-
+  
     return releases.length
       ? this.map(releases, false, options?.useTorrent, excl)
       : [];
