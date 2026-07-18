@@ -15,10 +15,7 @@ export default new class ToshoDubbed {
   url = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEv");
 
   // General AnimeTosho JSON feed for title fallback
-  searchUrls = [
-    atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24="),
-    atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ub3JnL2pzb24=")
-  ];
+  searchUrl = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEvc2VhcmNo");
 
   cleanCount(value) {
     const count = Number(value || 0);
@@ -189,18 +186,19 @@ export default new class ToshoDubbed {
   }
 
   async feedSearch(query) {
-    for (const url of this.buildFeedUrls(query)) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) continue;
-
-        const data = await res.json();
-
-        if (Array.isArray(data)) return data;
-      } catch {}
+    try {
+      const res = await fetch(
+        this.searchUrl + "?q=" + encodeURIComponent(query) + "&limit=100"
+      );
+  
+      if (!res.ok) return [];
+  
+      const json = await res.json();
+  
+      return json?.data?.releases || [];
+    } catch {
+      return [];
     }
-
-    return [];
   }
 
   async titleSearch({ titles = [], resolution, exclusions = [] }, options, batch = false, episode) {
