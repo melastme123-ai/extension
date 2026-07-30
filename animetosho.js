@@ -12,7 +12,7 @@ const SINGLE_EPISODE_REGEX = /\b(?:s\d{1,2}e\d{1,3}|episode[\s._-]*\d{1,3}|ep[\s
 const WEAK_BATCH_REGEX = /\b(?:season[\s._-]*\d{1,2}|s\d{1,2})\b/i;
 
 export default new class Tosho {
-  url = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEv");
+  url = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6Lw==");
 
   buildExclusions(resolution, exclusions = []) {
     const list = Array.isArray(exclusions) ? exclusions : [];
