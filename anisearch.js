@@ -8,11 +8,11 @@ const SEASON_TO_MONTH = {
 };
 
 const DUB_PATTERNS = [
-  // Dub, Dubbed, Eng Dub, English Dub, EnglishDub, etc.
+  // Dub, Dubbed, Eng Dub, English Dub, etc.
   /(?:^|[\s._()[\]{}-])(?:eng(?:lish)?[ ._-]*)?dub(?:bed)?(?:$|[\s._()[\]{}-])/i,
 
-  // Dual Audio, Dual-Audio, Dual_Audio, etc.
-  /(?:^|[\s._()[\]{}-])dual[ ._-]*audio(?:$|[\s._()[\]{}-])/i,
+  // Dual, Dual Audio, Dual-Audio, Dual_Audio, etc.
+  /(?:^|[\s._()[\]{}-])dual(?:[ ._-]*audio)?(?:$|[\s._()[\]{}-])/i,
 
   // English Audio or Eng Audio
   /(?:^|[\s._()[\]{}-])(?:eng|english)[ ._-]*audio(?:$|[\s._()[\]{}-])/i
