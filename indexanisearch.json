@@ -12,7 +12,7 @@
       "US"
     ],
     "icon": "https://api.anisearch.org/swagger/favicon-32x32.png",
-    "update": "https://exten.pages.dev/index.json",
-    "code": "https://exten.pages.dev/anisearch.js"
+    "update": "https://raw.githubusercontent.com/melastme123-ai/extension/refs/heads/main/indexanisearch.json",
+    "code": "https://raw.githubusercontent.com/melastme123-ai/extension/refs/heads/main/anisearch.js"
   }
 ]
