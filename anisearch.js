@@ -7,17 +7,6 @@ const SEASON_TO_MONTH = {
   FALL: 10
 };
 
-const DUB_PATTERNS = [
-  // Dub, Dubbed, Eng Dub, English Dub, etc.
-  /(?:^|[\s._()[\]{}-])(?:eng(?:lish)?[ ._-]*)?dub(?:bed)?(?:$|[\s._()[\]{}-])/i,
-
-  // Dual, Dual Audio, Dual-Audio, Dual_Audio, etc.
-  /(?:^|[\s._()[\]{}-])dual(?:[ ._-]*audio)?(?:$|[\s._()[\]{}-])/i,
-
-  // English Audio or Eng Audio
-  /(?:^|[\s._()[\]{}-])(?:eng|english)[ ._-]*audio(?:$|[\s._()[\]{}-])/i
-];
-
 function mediaStartDate(media) {
   const month = Math.max(
     (media.startDate?.month ?? SEASON_TO_MONTH[media.season] ?? 1) - 2,
@@ -33,9 +22,28 @@ function mediaStartDate(media) {
 }
 
 function isDubbed(entry) {
-  const title = entry.torrentName || entry.releaseName || "";
+  const title = [
+    entry.torrentName,
+    entry.releaseName,
+    entry.name,
+    entry.title
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
-  return DUB_PATTERNS.some(pattern => pattern.test(title));
+  return (
+    /\bdual\b/.test(title) ||
+    /\bdub\b/.test(title) ||
+    /\bdubbed\b/.test(title) ||
+    /\beng dub\b/.test(title) ||
+    /\benglish dub\b/.test(title) ||
+    /\beng audio\b/.test(title) ||
+    /\benglish audio\b/.test(title)
+  );
 }
 
 export default new class AniSearchDub {
