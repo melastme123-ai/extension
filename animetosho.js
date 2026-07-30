@@ -2,24 +2,14 @@ const QUALITIES = [ "1080", "720", "540", "480" ];
 
 const DUBBED_REGEX = /\b(?:dub|dubs|dubbed|dual|dual[\s._-]*audio|multi[\s._-]*audio|eng[\s._-]*dub|english[\s._-]*dub)\b/i;
 
-// Strong signs that something is a real batch.
 const STRONG_BATCH_REGEX = /\b(?:batch|complete|complete[\s._-]*series|complete[\s._-]*season|all[\s._-]*episodes|episodes?[\s._-]*\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3}|eps?[\s._-]*\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3}|s\d{1,2}e\d{1,3}[\s._-]*[-~][\s._-]*(?:s\d{1,2}e)?\d{1,3}|\d{1,3}[\s._-]*[-~][\s._-]*\d{1,3})\b/i;
 
-// Strong signs that something is only one episode.
 const SINGLE_EPISODE_REGEX = /\b(?:s\d{1,2}e\d{1,3}|episode[\s._-]*\d{1,3}|ep[\s._-]*\d{1,3}|e\d{1,3})\b/i;
 
-// Also catches titles like "Show Name - 04 [1080p]".
-const PLAIN_SINGLE_EPISODE_REGEX = /(?:^|[\s\]])-\s*\d{1,3}(?:v\d)?(?=[\s\[])/i;
-
-// Weak signs of a batch. These only count if it does not look like a single episode.
 const WEAK_BATCH_REGEX = /\b(?:season[\s._-]*\d{1,2}|s\d{1,2})\b/i;
 
 export default new class Tosho {
-  // Correct API root.
   url = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEv");
-
-  // Correct search endpoint.
-  searchUrl = atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24vdjEvc2VhcmNo");
 
   buildExclusions(resolution, exclusions = []) {
     const list = Array.isArray(exclusions) ? exclusions : [];
@@ -34,8 +24,6 @@ export default new class Tosho {
   }
 
   getReleases(data) {
-    if (Array.isArray(data)) return data;
-
     return data?.data?.releases || [];
   }
 
@@ -64,46 +52,7 @@ export default new class Tosho {
 
   cleanCount(value) {
     const count = Number(value || 0);
-
     return count >= 30000 ? 0 : count;
-  }
-
-  cleanSearchTitle(title = "") {
-    return String(title)
-      .replace(/[^\w\s-]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  unique(list) {
-    return [...new Set(list.filter(Boolean))];
-  }
-
-  titleVariants(titles = []) {
-    const cleaned = this.unique(
-      titles
-        .filter(title => typeof title === "string" && title.trim())
-        .map(title => this.cleanSearchTitle(title))
-    );
-
-    const extra = [];
-
-    for (const title of cleaned) {
-      const words = title.split(/\s+/).filter(Boolean);
-
-      if (words.length > 4) {
-        extra.push(words.slice(0, 4).join(" "));
-        extra.push(words.slice(0, 6).join(" "));
-      }
-
-      const mainPart = title.split(/\s+-\s+|\s+:\s+/)[0]?.trim();
-
-      if (mainPart && mainPart.length >= 3) {
-        extra.push(mainPart);
-      }
-    }
-
-    return this.unique([...cleaned, ...extra]).slice(0, 5);
   }
 
   isDubbed(entry) {
@@ -130,7 +79,7 @@ export default new class Tosho {
       return true;
     }
 
-    if (SINGLE_EPISODE_REGEX.test(title) || PLAIN_SINGLE_EPISODE_REGEX.test(title)) {
+    if (SINGLE_EPISODE_REGEX.test(title)) {
       return false;
     }
 
@@ -174,159 +123,71 @@ export default new class Tosho {
       .filter(entry => entry.link);
   }
 
-  async searchByTitle({ titles = [], resolution, exclusions = [] }, options, batch = false, episode) {
-    if (!titles?.length) return [];
+  async single({ anidbEid, anidbAid, resolution, exclusions = [] }, options) {
+    if (!navigator.onLine) return [];
 
-    const variants = this.titleVariants(titles);
-    const allResults = [];
-
-    for (const title of variants) {
-      const queries = this.unique([
-        `${title} dub`,
-        `${title} dubbed`,
-        `${title} dual audio`,
-        `${title} english dub`,
-        `${title} multi audio`
-      ]);
-
-      for (const query of queries) {
-        try {
-          const res = await fetch(
-            this.searchUrl + "?q=" + encodeURIComponent(query) + "&limit=100"
-          );
-
-          if (!res.ok) continue;
-
-          const json = await res.json();
-          const releases = this.getReleases(json);
-
-          allResults.push(...releases);
-        } catch {}
-      }
+    if (!anidbEid && anidbAid) {
+      return this.movie({ anidbAid, resolution, exclusions }, options);
     }
 
-    const seen = new Set();
+    if (!anidbEid) return [];
 
-    const deduped = allResults.filter(entry => {
-      const key = entry.info_hash || this.getMagnet(entry) || this.getTitle(entry);
+    const res = await fetch(this.url + "episodes/" + anidbEid + "?limit=100");
+    const json = await res.json();
 
-      if (!key || seen.has(key)) return false;
-
-      seen.add(key);
-      return true;
-    });
-
+    const releases = this.getReleases(json);
     const excl = this.buildExclusions(resolution, exclusions);
 
-    const filtered = batch
-      ? deduped.filter(entry => this.isBatch(entry, episode))
-      : deduped;
-
-    return this.map(filtered, batch, options?.useTorrent, excl);
+    return releases.length
+      ? this.map(releases, false, options?.useTorrent, excl)
+      : [];
   }
 
-  async single({ anidbEid, anidbAid, titles = [], resolution, exclusions = [] }, options) {
+  async batch({ anidbAid, resolution, exclusions = [], episode }, options) {
     if (!navigator.onLine) return [];
+    if (!anidbAid) return [];
 
-    // If there is no episode ID, try movie/series lookup first, then title search.
-    if (!anidbEid && anidbAid) {
-      const movieResults = await this.movie({ anidbAid, titles, resolution, exclusions }, options);
+    const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
+    const json = await res.json();
 
-      if (movieResults.length) return movieResults;
+    const releases = this.getReleases(json);
+    const excl = this.buildExclusions(resolution, exclusions);
 
-      return this.searchByTitle({ titles, resolution, exclusions }, options, false);
-    }
+    const batchReleases = releases.filter(entry =>
+      this.isBatch(entry, episode)
+    );
 
-    if (!anidbEid) {
-      return this.searchByTitle({ titles, resolution, exclusions }, options, false);
-    }
-
-    try {
-      const res = await fetch(this.url + "episodes/" + anidbEid + "?limit=100");
-
-      if (res.ok) {
-        const json = await res.json();
-        const releases = this.getReleases(json);
-        const excl = this.buildExclusions(resolution, exclusions);
-
-        const results = releases.length
-          ? this.map(releases, false, options?.useTorrent, excl)
-          : [];
-
-        if (results.length) return results;
-      }
-    } catch {}
-
-    return this.searchByTitle({ titles, resolution, exclusions }, options, false);
+    return batchReleases.length
+      ? this.map(batchReleases, true, options?.useTorrent, excl)
+      : [];
   }
 
-  async batch({ anidbAid, titles = [], resolution, exclusions = [], episode }, options) {
+  async movie({ anidbAid, resolution, exclusions = [] }, options) {
     if (!navigator.onLine) return [];
+    if (!anidbAid) return [];
 
-    if (!anidbAid) {
-      return this.searchByTitle({ titles, resolution, exclusions }, options, true, episode);
-    }
+    const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
+    const json = await res.json();
 
-    try {
-      const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
+    const releases = this.getReleases(json);
+    const excl = this.buildExclusions(resolution, exclusions);
 
-      if (res.ok) {
-        const json = await res.json();
-        const releases = this.getReleases(json);
-        const excl = this.buildExclusions(resolution, exclusions);
-
-        const batchReleases = releases.filter(entry =>
-          this.isBatch(entry, episode)
-        );
-
-        const results = batchReleases.length
-          ? this.map(batchReleases, true, options?.useTorrent, excl)
-          : [];
-
-        if (results.length) return results;
-      }
-    } catch {}
-
-    return this.searchByTitle({ titles, resolution, exclusions }, options, true, episode);
-  }
-
-  async movie({ anidbAid, titles = [], resolution, exclusions = [] }, options) {
-    if (!navigator.onLine) return [];
-
-    if (!anidbAid) {
-      return this.searchByTitle({ titles, resolution, exclusions }, options, false);
-    }
-
-    try {
-      const res = await fetch(this.url + "series/anidb/" + anidbAid + "?limit=100");
-
-      if (res.ok) {
-        const json = await res.json();
-        const releases = this.getReleases(json);
-        const excl = this.buildExclusions(resolution, exclusions);
-
-        const results = releases.length
-          ? this.map(releases, false, options?.useTorrent, excl)
-          : [];
-
-        if (results.length) return results;
-      }
-    } catch {}
-
-    return this.searchByTitle({ titles, resolution, exclusions }, options, false);
+    return releases.length
+      ? this.map(releases, false, options?.useTorrent, excl)
+      : [];
   }
 
   async test() {
     try {
-      const res = await fetch(this.url);
+      const res = await fetch(atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24="));
 
       if (!res.ok) {
-        throw new Error(`Failed to load data from ${this.url}! Is the site down?`);
+        throw new Error("AnimeTosho API unavailable.");
       }
 
       return true;
     } catch {
-      throw new Error(`Could not reach ${this.url}! Does the site work in your region?`);
+      throw new Error("Could not reach AnimeTosho API.");
     }
   }
 };
