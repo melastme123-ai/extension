@@ -37,6 +37,8 @@ function isDubbed(entry) {
 
   return (
     /\bdual\b/.test(title) ||
+    /\bmulti audio\b/.test(title) ||
+    /\bmultiaudio\b/.test(title) ||
     /\bdub\b/.test(title) ||
     /\bdubbed\b/.test(title) ||
     /\beng dub\b/.test(title) ||
