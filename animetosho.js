@@ -3,7 +3,7 @@ const QUALITIES = [ "1080", "720", "540", "480" ];
 export default new class Tosho {
   url=atob("aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ueHl6L2pzb24=");
   _buildQuery({resolution: resolution, exclusions: exclusions}) {
-    const base = "&qx=1&q=(dub|dubbed|dual*)";
+    const base = '&qx=1&q=(dual*|multi*audio|multiaudio|dub|dubbed|eng*dub|english*dub|eng*audio|english*audio)';
     if (!exclusions?.length && !resolution) return base;
     const excl = `!("${exclusions.join('"|"')}")`;
     if (!resolution) return base + excl;
